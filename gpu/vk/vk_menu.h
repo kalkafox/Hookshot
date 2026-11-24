@@ -101,6 +101,7 @@ struct Options {
     int invert_cam_y = 0; // right-stick camera vertical inversion: 0 normal, 1 inverted
     int rumble = 100;     // Vibration strength: percent of what the game asks for, 25 to 200 (host/pad_sdl.c; rumble_strength=)
     int vibration = 0;    // (hookshot) Vibration: 0 Auto, 1 Basic (the motors), 2 Off (host/vibration.h)
+    int adaptive_triggers = 2;   // (hookshot) Adaptive triggers: 0 Off, 1 Light, 2 Normal, 3 Strong (host/adaptive_triggers.h)
     int stick_dead_zone = 0;  // circular stick cutoff: 0 XInput's 7849 (~24%), 1..5 5% to 30% (host/nn_hid.c)
     int hold_toggle = 0;  // enabled Switch buttons (1 << HOS_SW_*); persisted as toggle_<button>, not one mask entry
     int pad_layout = 0;   // 0 Nintendo (default), 1 Xbox / PC, 2 Swap Face Buttons, 3 Switch 2 Pro (every button the pad's own), 4 Custom

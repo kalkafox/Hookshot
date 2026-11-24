@@ -452,6 +452,7 @@ Camera, Mouse, Movement and Menu. The table lists those tabs' rows in that order
 | | Vibration | Auto, Basic, Off | Auto |
 | | Vibration strength | 25% to 200%, in steps of 25 | 100% |
 | | Test vibration | an action: Confirm buzzes the controller used last; the value says what plays it | Motors |
+| | Adaptive triggers | Off, Light, Normal, Strong: a DualSense's triggers stiffen in play (the bow's draw on ZR's trigger, lighter for the Slingshot, a wall for the Hookshot and the Hammer, a click for the Boomerang, bombs and Deku Nuts, a band for Deku Sticks; a light wall on ZL's for the shield) | Normal |
 | | Motion | Opens the Motion page: Motion controls (Off, On; On), Motion sensitivity X (10% to 600%) and Y (10% to 300%; 100%), Invert motion X and Y (Off, On; Off), Motion deadzone (Low, Standard, High; Standard) | |
 | | Camera speed | 50% to 400%, in steps of 25 | 100% |
 | | Invert camera X | Off, On | Off |
@@ -721,6 +722,11 @@ Camera, Mouse, Movement and Menu. The table lists those tabs' rows in that order
 - **Test vibration** buzzes the controller used last for half a second, and its value says what plays that controller now
   (Motors, HD rumble, Fine haptics (cable), ...); its help line says why, for example a DualSense whose sound card was not
   found, or RenHDrum missing.
+- **Adaptive triggers** (DualSense, cable or Bluetooth): in play, the trigger ZR is on pulls like a bowstring while the
+  bow is on ZR, softer for the Slingshot, and stops at a light wall past the middle for the Hookshot and the Longshot. The
+  Boomerang clicks past the middle, the Megaton Hammer is a heavy wall, Bombs, Bombchus and Deku Nuts give a light click,
+  and Deku Sticks a short band in the middle of the pull. The trigger ZL is on has a light wall for the shield. Menus, the item row and the ocarina leave both free. Off, Light,
+  Normal (the default) or Strong; `HOS_ADAPTIVE_TRIGGERS=0` to `3` overrides it for one run.
 - **Motion controls** (Controls tab, Motion page): the controller's gyroscope aims where the game uses motion, as on the Switch. It works with
   Switch Pro controllers and pads in Switch mode, DualSense and DualShock 4 (through SDL). Its row
   says whether the connected pad has a gyroscope; Off leaves the game seeing a pad lying still. **Motion sensitivity X/Y**

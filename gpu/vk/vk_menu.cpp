@@ -1070,6 +1070,11 @@ const char* hn_mic(int v, int variant) {
 // can do, Basic its motors, Off nothing; the strength is one percent of what the game asks for, every backend's. The host
 // writes back what plays the controller used last (HOS_OPT_VIBRATION_STATUS: its kind times 16, plus what it says), which
 // Test vibration's cell and help show.
+// (hookshot) Adaptive triggers (host/adaptive_triggers.h)
+const char* tx_adaptive_triggers(int v) {
+    static const char* t[] = {"Off", "Light", "Normal", "Strong"};
+    return t[std::min(std::max(v, 0), 3)];
+}
 const char* tx_vibration(int v) {
     static const char* t[] = {"Auto", "Basic", "Off"};
     return (unsigned)v < 3 ? t[v] : t[0];
@@ -1893,6 +1898,11 @@ Row rows[] = {
      "strength.", nullptr, false, true},
     {TAB_CONTROLS, "Test vibration", nullptr, 0, 0, 0, nullptr,
      "A short buzz on the controller used last. The value says what plays its vibration now.", hn_vibration_test},
+    {TAB_CONTROLS, "Adaptive triggers", &opts.adaptive_triggers, 0, 3, 1, tx_adaptive_triggers,
+     "How stiff a DualSense's triggers get in play: the bow's draw on ZR's trigger, a lighter one for the Slingshot, "
+     "a wall past the middle for the Hookshot, a heavy wall for the Megaton Hammer, a click for the Boomerang, bombs and "
+     "Deku Nuts, a short band for Deku Sticks, and a light wall on ZL's for the shield. Off leaves them free.",
+     nullptr, false, true},
     {TAB_CONTROLS, "Motion", nullptr, 0, 0, 0, nullptr,   // (hookshot: opens the Motion page, the TAB_MOTION rows)
      "Motion controls: aiming with the controller's gyroscope, its sensitivity and its inverts."},
     {TAB_CONTROLS, "Camera", nullptr, 0, 0, 0, nullptr, nullptr, nullptr, false, true, -1, true},

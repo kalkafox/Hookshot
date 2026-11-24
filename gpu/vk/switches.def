@@ -12,6 +12,7 @@ SW(HOOKSHOT_NFC_DIR, player, string, "the user's own NFC folder (docs/nfc.md)", 
 SW(HOOKSHOT_NO_AV1_NOTICE, kill, bool, "the notice window is shown once (Windows, no AV1 decoder)", "No pop-up asking to install the AV1 Video Extension; the log line is still written.")
 SW(HOOKSHOT_PREPARE_ONLY, player, bool, "off: a normal game run", "Marks a --prepare-shaders run: the renderer only compiles and saves shaders, skipping work a played run does.")
 SW(HOS_AB, diag, string, "off: no A/B", "<switch>=<value>[,<seconds>[,<warm-up s>]]: after the warm-up (20 s) the switch alternates every period (3 s) between its normal value and <value>, an A/B within one run; the frame trace gets ab_side (scripts/ab_summary.py).")
+SW(HOS_ADAPTIVE_TRIGGERS, player, enum, "the Controls page's Adaptive triggers row (Normal)", "0 to 3 (Off, Light, Normal, Strong), or off and on (Normal): a DualSense's adaptive triggers for this run, over the row (host/adaptive_triggers.h).")
 SW(HOS_ASPECT, player, float, "the menu's Aspect ratio row (ultrawide=)", "Sets the picture's aspect ratio (e.g. 2.3889) over the options file's Aspect ratio.")
 SW(HOS_AUDIO, kill, bool, "sound device opened", "=0 opens no sound device; the mixer still runs.")
 SW(HOS_AUDIO_CHANNELS, player, int, "the menu's Audio output row, else the default device's layout", "Forces the layout the game mixes for: 6 or more is 5.1, anything else stereo.")

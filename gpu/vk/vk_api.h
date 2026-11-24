@@ -94,8 +94,12 @@ enum { HOS_OPT_MOUSE_INVERT_X = 61 };
    DualSense on a cable its voice coils through RenHDrum, a Switch controller its own HD rumble, the others their motors),
    Basic every controller's motors, Off nothing. The strength is option 9, every backend's. 63 and 64: 58 is the render
    thread's, 59 transition autosave, 60 Shadow resolution, 61 mouse invert X, 65-71 the detail sliders, 72-75 the item
-   wheel, cycling, the Travel pictures and the HUD layout, 76 native zstd's default; 62 is free */
+   wheel, cycling, the Travel pictures and the HUD layout, 76 native zstd's default; 62 Adaptive triggers */
 enum { HOS_OPT_VIBRATION = 63 };
+/* (hookshot) Adaptive triggers: 0 Off, 1 Light, 2 Normal (the default), 3 Strong (host/adaptive_triggers.h). A DualSense's
+   triggers stiffen with what Link holds in play: the bow's draw on the trigger ZR is on, a light wall on ZL's for the
+   shield; host/pad_sdl.c reads it by its number each poll, HOS_ADAPTIVE_TRIGGERS over it. The existing option callback */
+enum { HOS_OPT_ADAPTIVE_TRIGGERS = 62 };
 /* (hookshot) What plays the controller used last, written back by the host each poll (host/pad_sdl.c): its kind times 16
    plus what it says (host/vibration.h's VIB_PAD_*, VIB_SAY_*); Test vibration's cell and help read it. */
 enum { HOS_OPT_VIBRATION_STATUS = 64 };

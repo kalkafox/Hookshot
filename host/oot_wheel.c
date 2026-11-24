@@ -976,6 +976,29 @@ static void zr_follow(Ctx *c, int64_t now) {
     if (cur < 0 || cur >= CY_ITEMS || cur == zr_now[age]) return;
     zr_before[age] = zr_now[age], zr_now[age] = cur;
 }
+/* (hookshot) host/pad_sdl.c's adaptive triggers (host/adaptive_triggers.h): the item on ZR, read at the HUD's updates
+   every 150 ms whatever Cycle items is (-1 not known: no pouch yet, or not in play) */
+static volatile int trig_item = -1;
+static void trig_follow(Ctx *c, int64_t now) {
+    static int64_t next;
+    if (now < next) return;
+    next = now + 150000000LL;
+    const uint64_t mgr = cy_peek(CY_POUCH_SLOT, 8), ui = cy_peek(CY_UI_SLOT, 8);
+    int cur = -1;
+    if (mgr && ui && a64_lookup(CY_GETTER)) {
+        const uint64_t g[3] = {mgr, cy_peek(ui + 0x5c0, 1) & 1, 1};
+        cur = (int32_t)cy_guest(c, CY_GETTER, 3, g);
+        if (cur < 0 || cur >= CY_ITEMS) cur = -1;
+    }
+    __atomic_store_n(&trig_item, cur, __ATOMIC_RELEASE);
+}
+/* play, with no item row open (the wheel's or the game's): the HUD updating, the pause menu not */
+int hos_oot_in_play(void) {
+    const int64_t now = hos_now_ns(), row = __atomic_load_n(&row_tick_ns, __ATOMIC_ACQUIRE);
+    return in_play(now) && !(row && now - row < ROW_OPEN_NS && !row_gone(row));
+}
+/* the item on ZR (PouchMgr's AssignableItem), -1 when not known */
+int hos_oot_zr_item(void) { return __atomic_load_n(&trig_item, __ATOMIC_ACQUIRE); }
 /* (hookshot) Last used's tap: the item on ZR before this one put back, when the game would still list it */
 static void cycle_last(Ctx *c) {
     const uint64_t mgr = cy_peek(CY_POUCH_SLOT, 8), ui = cy_peek(CY_UI_SLOT, 8);
@@ -1418,6 +1441,7 @@ int hos_wheel_menu_tick(Ctx *c, uint64_t screen_arg) {
             __atomic_store_n(&state_lock, 0, __ATOMIC_RELEASE);
         }
         if (cycle_level() >= 4) zr_follow(c, hos_now_ns());   /* (hookshot: Last used's history of ZR's item) */
+        trig_follow(c, hos_now_ns());   /* (hookshot: the adaptive triggers' item, host/pad_sdl.c) */
         if (seq != cycle_seen && !__atomic_exchange_n(&state_lock, 1, __ATOMIC_ACQUIRE)) {
             cycle_seen = seq;
             const int level = cycle_level();

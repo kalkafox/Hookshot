@@ -22,6 +22,7 @@
 #include "hos_sdl.h"
 #include "hd_rumble.h"
 #include "vibration.h"
+#include "adaptive_triggers.h"
 #include "rumble_renhdrum.h"
 #include "hos_motion.h"
 #include "steam_pads.h"
@@ -66,6 +67,11 @@ static struct {
     uint16_t vendor;      /* (hookshot) its USB vendor, and its Steam Input handle: not 0 for a Steam stand-in pad */
     uint64_t steam;
     int motion_only;      /* (host/steam_pads.h) a real Valve pad while a Steam stand-in pad is open: motion, no input */
+    /* (hookshot) a DualSense's adaptive triggers (host/adaptive_triggers.h): the 47 bytes last sent, when, whether any
+       were sent since it opened, and whether SDL refused them (said once) */
+    uint8_t trig_sent[47];
+    int64_t trig_ns;
+    int8_t trig_known, trig_refused;
 } pads[MAX_PADS];
 static uint32_t pads_opened;
 static SRWLOCK state_lock = SRWLOCK_INIT;
@@ -429,6 +435,54 @@ static void four_poll(int i, int64_t now) {
     memcpy(pads[i].four, m, sizeof m), pads[i].four_ns = now;
 }
 
+/* ---- (hookshot) a DualSense's adaptive triggers (host/adaptive_triggers.h): sent through SDL's effect call when they
+   change, and again every 2 s while one is stiff (a pad another program reset gets them back). Both are freed when the
+   pad opens (an effect left by a run that crashed), when the row goes Off and at exit: the controller keeps an effect
+   until it is told otherwise, after the game has closed too. Not for a Steam stand-in pad: Steam Input has the pad ---- */
+static volatile LONG trig_exiting;
+static void trig_send(int i, const uint8_t r[TRIG_REPORT_SIZE], int64_t now) {
+    const int ok = hos_sdl_pad_effect(pads[i].gc, r, TRIG_REPORT_SIZE);
+    if (!ok && !pads[i].trig_refused)
+        hos_log("triggers: \"%s\": SDL would not send the adaptive triggers' effect (an SDL without the effect call, "
+                "or a pad it does not drive itself)", hos_sdl_pad_name(pads[i].gc));
+    pads[i].trig_refused = (int8_t)!ok;
+    memcpy(pads[i].trig_sent, r, TRIG_REPORT_SIZE);
+    pads[i].trig_ns = now, pads[i].trig_known = 1;
+}
+/* (atexit: both triggers freed on every DualSense that had an effect) */
+static void trig_at_exit(void) {
+    InterlockedExchange(&trig_exiting, 1);
+    uint8_t free_[TRIG_EFFECT_SIZE], r[TRIG_REPORT_SIZE];
+    trig_effect(TRIG_ROLE_NONE, TRIG_LEVEL_OFF, 0, TRIG_ITEM_NONE, free_);
+    trig_report(free_, free_, r);
+    for (int i = 0; i < MAX_PADS; i++)
+        if (pads[i].gc && pads[i].trig_known && !trig_report_free(pads[i].trig_sent))
+            hos_sdl_pad_effect(pads[i].gc, r, TRIG_REPORT_SIZE);
+}
+/* pad i's two triggers: the level (the row), whether the game is in play, the item on ZR (its number, -1 unknown), and
+   the controls' pad inputs for ZL and ZR (which trigger plays which) */
+static void trig_poll(int i, int level, int play, int zr_item, const int zl[2], const int zr[2], int64_t now) {
+    if (pads[i].vib_kind != VIB_PAD_DUALSENSE || pads[i].steam || InterlockedCompareExchange(&trig_exiting, 0, 0)) return;
+    uint8_t left[TRIG_EFFECT_SIZE], right[TRIG_EFFECT_SIZE], r[TRIG_REPORT_SIZE];
+    const int item = trig_item_kind(zr_item);
+    const int lrole = trig_role(HOS_PAD_LTRIGGER, zl, zr), rrole = trig_role(HOS_PAD_RTRIGGER, zl, zr);
+    trig_effect(lrole, level, play, item, left);
+    trig_effect(rrole, level, play, item, right);
+    trig_report(left, right, r);
+    const int changed = !pads[i].trig_known || memcmp(r, pads[i].trig_sent, TRIG_REPORT_SIZE);
+    if (!changed && (trig_report_free(r) || now - pads[i].trig_ns < 2000000000LL)) return;
+    if (changed) {   /* (what the triggers play, each change, the first 200: what a tester felt, in the log) */
+        static int said, exit_set;
+        if (!exit_set) exit_set = 1, atexit(trig_at_exit);
+        if (said++ < 200)   /* (ZR's item number too: which number is which item is checked in play) */
+            hos_log("triggers: \"%s\": L2 %s, R2 %s (level %d, ZR item %d%s)", hos_sdl_pad_name(pads[i].gc),
+                    left[0] == TRIG_MODE_OFF ? "free" : lrole == TRIG_ROLE_ZL ? "the shield's wall" : trig_item_name(item),
+                    right[0] == TRIG_MODE_OFF ? "free" : rrole == TRIG_ROLE_ZL ? "the shield's wall" : trig_item_name(item),
+                    level, zr_item, play ? "" : ", not in play");
+    }
+    trig_send(i, r, now);
+}
+
 /* one poll: controllers plugged in or gone (each second), then every open one's buttons, sticks and rumble */
 static void pads_poll(void) {
     static int64_t next_scan = 0;
@@ -479,6 +533,7 @@ static void pads_poll(void) {
                 pads[slot].has_bias = 0;
                 pads[slot].vendor = hos_sdl_pad_vendor(gc);
                 pads[slot].steam = hos_sdl_pad_steam_handle(gc);
+                pads[slot].trig_known = pads[slot].trig_refused = 0;   /* (hookshot: its triggers freed at the first poll) */
                 pads[slot].motion_only = 0;   /* (the poll below decides, and says so) */
                 hos_sdl_pad_log_connection(gc, pads[slot].motion, pads[slot].steam != 0);
             }
@@ -513,6 +568,25 @@ static void pads_poll(void) {
             hd_rumble_merge(felt[0], felt[1], felt[2]);
             hd_rumble_encode(felt[2], strength, side[2]);
         }
+        /* (hookshot) the adaptive triggers (host/adaptive_triggers.h): the Controls page's row (HOS_ADAPTIVE_TRIGGERS over
+           it), play with no Insert menu or ocarina wait (host/oot_wheel.c, host/nn_hid.c), the item on ZR, and which
+           trigger ZL and ZR are on */
+        static const char *trig_env;
+        static int trig_env_read;
+        if (!trig_env_read) trig_env_read = 1, trig_env = getenv("HOS_ADAPTIVE_TRIGGERS");
+        const int trig_lvl = trig_level(trig_env, rx_option(HOS_OPT_ADAPTIVE_TRIGGERS, TRIG_LEVEL_NORMAL));
+        int hos_oot_in_play(void), hos_oot_zr_item(void);
+        int hos_binding(int set, int button, int slot);
+        extern volatile int hos_oc_wait;
+        const int trig_play = hos_oot_in_play() && !rx_option(1, 0) && !hos_oc_wait;
+        const int trig_item = hos_oot_zr_item();   /* (its number: trig_poll takes its kind) */
+        int trig_zl[2] = {-1, -1}, trig_zr[2] = {-1, -1};
+        for (int i = 0; i < MAX_PADS; i++)
+            if (pads[i].gc && pads[i].vib_kind == VIB_PAD_DUALSENSE) {   /* (the controls, only with a DualSense open) */
+                for (int k = 0; k < 2; k++)
+                    trig_zl[k] = hos_binding(HOS_BIND_PAD, HOS_SW_ZL, k), trig_zr[k] = hos_binding(HOS_BIND_PAD, HOS_SW_ZR, k);
+                break;
+            }
         int stand_in = 0;   /* (hookshot) a Steam stand-in pad open (host/steam_pads.h) */
         int64_t status_used = -1;   /* (hookshot) the Controls page's vibration line: the pad used last */
         int status_pad = -1;
@@ -590,6 +664,8 @@ static void pads_poll(void) {
                 for (int k = 0; k < 4; k++) sig |= (uint64_t)(v[k] > 0 ? 1 : v[k] < 0 ? 2 : 0) << (32 + 2 * k);
                 if (sig != pads[i].input_sig) pads[i].input_sig = sig, pads[i].used_ns = now;
             }
+            /* (hookshot) its adaptive triggers, a DualSense's (host/adaptive_triggers.h) */
+            trig_poll(i, trig_lvl, trig_play, trig_item, trig_zl, trig_zr, now);
             /* (hookshot) what plays its vibration: chosen again each poll (host/vibration.h), then played */
             vib_choose(i, mode, now);
             if (pads[i].used_ns >= status_used) status_used = pads[i].used_ns, status_pad = i;
