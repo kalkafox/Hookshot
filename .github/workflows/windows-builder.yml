@@ -22,7 +22,15 @@ on:
       - 'docs/**'
       - '*.md'
       - '.release-please-manifest.json'
+  # (setup_installs: latest builds a setup that installs the latest release when started with no --tag, as a release's does,
+  # for handing to a player while the nightly is unreachable; GitHub holds no nightly release)
   workflow_dispatch:
+    inputs:
+      setup_installs:
+        description: what the setup installs when started with no --tag
+        type: choice
+        options: [nightly, latest]
+        default: nightly
   workflow_call:
     inputs:
       tag:
@@ -130,9 +138,12 @@ jobs:
       # nightly, when started with no --tag: HOOKSHOT_SETUP_RELEASE)
       - name: HookshotBuilder-Setup.exe
         working-directory: builder/setup
+        env:
+          SETUP_INSTALLS: ${{ github.event_name == 'workflow_dispatch' && inputs.setup_installs || 'nightly' }}
         run: |
           release=
           if [[ -z $RELEASE_TAG ]]; then release=nightly; elif [[ $RELEASE_TAG == *-* ]]; then release=$RELEASE_TAG; fi
+          if [[ -z $RELEASE_TAG && $SETUP_INSTALLS == latest ]]; then release=; fi
           "$LLVM_MINGW/bin/x86_64-w64-mingw32-windres" setup.rc -O coff -o "$RUNNER_TEMP/setup_rc.o"
           "$LLVM_MINGW/bin/x86_64-w64-mingw32-clang" -O2 -mwindows -municode ${release:+"-DHOOKSHOT_SETUP_RELEASE=\"$release\""} \
             setup.c "$RUNNER_TEMP/setup_rc.o" \

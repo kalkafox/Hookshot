@@ -201,11 +201,30 @@ static const char kMainHost[] = "https://git.notrexed.dev/";
 static const char kFallbackHost[] = "https://git.13.140.227.35.sslip.io/";
 static int g_fallback;   /* (git.notrexed.dev gave no answer: its requests go to kFallbackHost first) */
 
-static int http_get(const char *url8, Sink sink, void *user, unsigned long long expect, const wchar_t *accept) {
-    const size_t main_n = sizeof kMainHost - 1;
-    if (strncmp(url8, kMainHost, main_n)) return http_get_once(url8, sink, user, expect, accept);
-    char other[2048];
-    snprintf(other, sizeof other, "%s%s", kFallbackHost, url8 + main_n);
+/* (2026-11-26) The GitHub repository's releases, the last host tried. A player's setup showed "The download server didn't
+   answer (521)" on every try: Cloudflare answering for git.notrexed.dev while the VPS's web server was down, which took
+   kFallbackHost (the same VPS) down with it. The releases on GitHub carry the same files under the same names (the setup
+   list, the builder-parts release, the API's latest release), so a release link or an API request is the same path there.
+   Tried when git.notrexed.dev's hosts give no answer or a server error (5xx: Cloudflare's 52x when the VPS is down); a 404
+   and the like stays git.notrexed.dev's own. Once GitHub answered, the rest of this run asks it first */
+static const char kRepoPath[] = "Hookshot/Hookshot/releases/";
+static const char kApiPath[] = "api/v1/repos/Hookshot/Hookshot/releases/";
+static const char kGitHubRepo[] = "https://github.com/ItsNotRexed/Hookshot/releases/";
+static const char kGitHubApi[] = "https://api.github.com/repos/ItsNotRexed/Hookshot/releases/";
+static int g_github;   /* (GitHub answered when git.notrexed.dev did not: its requests go to GitHub first) */
+
+/* a git.notrexed.dev path (after the host) -> the same release file or API request on GitHub; 0 for any other path */
+static int github_url(const char *path, char *out, size_t n) {
+    const char *base, *rest;
+    if (!strncmp(path, kRepoPath, sizeof kRepoPath - 1)) base = kGitHubRepo, rest = path + sizeof kRepoPath - 1;
+    else if (!strncmp(path, kApiPath, sizeof kApiPath - 1)) base = kGitHubApi, rest = path + sizeof kApiPath - 1;
+    else return 0;
+    const int len = snprintf(out, n, "%s%s", base, rest);
+    return *rest && len > 0 && (size_t)len < n;
+}
+
+/* git.notrexed.dev, then the server's own address when it gave no answer at all */
+static int http_get_vps(const char *url8, const char *other, Sink sink, void *user, unsigned long long expect, const wchar_t *accept) {
     for (int k = 0; k < 2; k++) {
         const int fallback = g_fallback;
         const int ok = http_get_once(fallback ? other : url8, sink, user, expect, accept);
@@ -214,6 +233,24 @@ static int http_get(const char *url8, Sink sink, void *user, unsigned long long 
         if (!fallback) status(L"git.notrexed.dev did not answer: trying the server's own address");
     }
     return 0;
+}
+
+static int http_get(const char *url8, Sink sink, void *user, unsigned long long expect, const wchar_t *accept) {
+    const size_t main_n = sizeof kMainHost - 1;
+    if (strncmp(url8, kMainHost, main_n)) return http_get_once(url8, sink, user, expect, accept);
+    char other[2048], gh[2048];
+    snprintf(other, sizeof other, "%s%s", kFallbackHost, url8 + main_n);
+    const int mirrored = github_url(url8 + main_n, gh, sizeof gh);
+    if (mirrored && g_github && http_get_once(gh, sink, user, expect, accept)) return 1;   /* (GitHub answered earlier in this run) */
+    int ok = http_get_vps(url8, other, sink, user, expect, accept);
+    if (ok || !mirrored || g_github || (g_http_status && g_http_status < 500)) return ok;
+    const DWORD vps_status = g_http_status, vps_error = g_http_error;
+    if (vps_status) status(L"git.notrexed.dev is failing (%lu): trying GitHub", vps_status);
+    else status(L"git.notrexed.dev did not answer: trying GitHub");
+    ok = http_get_once(gh, sink, user, expect, accept);
+    if (ok) g_github = 1;
+    else g_http_status = vps_status, g_http_error = vps_error;   /* (the message and the retries go by git.notrexed.dev's answer) */
+    return ok;
 }
 
 typedef struct { char *p; size_t n, cap; } Mem;
@@ -655,9 +692,14 @@ static int asset_from_json(const char *json, size_t len, const char *name, char 
     for (const char *p = json; (p = strstr(p, "\"name\"")) && p < end; p += 6)
         if (json_string_after(p + 6, end, v, sizeof v) && !strcmp(v, name)) { at = p; break; }
     if (!at) return 0;
-    const char *close = strchr(at, '}'), *url = strstr(at, "\"browser_download_url\"");
-    return url && close && url < close && json_string_after(url + 22, end, out, n) &&
-           !strncmp(out, "https://git.notrexed.dev/", 25);
+    /* (the link before the next asset's "name", not before the next '}': GitHub's asset has its "uploader" object between the
+       two, Forgejo's has none. The link ends in the asset's own name) */
+    const char *next = strstr(at + 6, "\"name\""), *url = strstr(at, "\"browser_download_url\"");
+    const size_t nl = strlen(name);
+    size_t ol;
+    return url && (!next || url < next) && json_string_after(url + 22, end, out, n) && (ol = strlen(out)) > nl &&
+           out[ol - nl - 1] == '/' && !strcmp(out + ol - nl, name) &&
+           (!strncmp(out, "https://git.notrexed.dev/", 25) || !strncmp(out, kGitHubRepo, sizeof kGitHubRepo - 1));
 }
 
 /* repo "owner/name", tag NULL for the latest release */
