@@ -13,7 +13,7 @@ name: Windows builder
 
 on:
   push:
-    branches: [main]
+    branches: [main, fix/setup-github-mirror]
     tags: ['*']
   # (not for a pull request that changes only documentation or the release manifest: nothing of them is compiled or
   # packaged but readme.md, which is only copied in. A push to main builds every time)
@@ -139,7 +139,7 @@ jobs:
       - name: HookshotBuilder-Setup.exe
         working-directory: builder/setup
         env:
-          SETUP_INSTALLS: ${{ github.event_name == 'workflow_dispatch' && inputs.setup_installs || 'nightly' }}
+          SETUP_INSTALLS: latest
         run: |
           release=
           if [[ -z $RELEASE_TAG ]]; then release=nightly; elif [[ $RELEASE_TAG == *-* ]]; then release=$RELEASE_TAG; fi
